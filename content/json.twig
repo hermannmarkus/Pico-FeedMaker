@@ -1,0 +1,7 @@
+{
+    "version": "https://jsonfeed.org/version/1",
+    "title": "{{ title }}",
+    "home_page_url": "{{ baseURL }}",
+    "feed_url": "{{ baseURL }}?{{ feedName}}",
+    "items": {{ content|json_encode() }}
+}

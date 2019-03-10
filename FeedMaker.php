@@ -7,16 +7,16 @@
  * @author  Markus Hermann
  * @link    https://github.com/hermannmarkus/Pico-FeedMaker
  * @license http://opensource.org/licenses/MIT The MIT License
- * @version 1.9
+ * @version 2.0
  */
 final class FeedMaker extends AbstractPicoPlugin
 {
 
     //variable declarations
 
-    private $feedType = null;  // boolean to determine if the user has typed example.com/feed
-    private $feedTitle = '';    // title of the feed will be the site title
-    private $baseURL = '';      // this will hold the base url
+    private $feedType = null;
+    private $feedTitle = '';
+    private $baseURL = '';
     /**
      * This plugin is enabled by default?
      *
@@ -42,10 +42,10 @@ final class FeedMaker extends AbstractPicoPlugin
     public function onConfigLoaded(array &$config)
     {
         // Get site data
-
         $this->feedTitle = $config['site_title'];
         $this->siteDescription = $config['FeedMaker.site_description'];
         $this->baseURL = $config['base_url'];
+        $this->dateFormat = $config['FeedMaker.date_format'];
     }
 
     /**
@@ -61,6 +61,14 @@ final class FeedMaker extends AbstractPicoPlugin
         if ($url == 'feed.rss') {
             $this->feedType = "rss";
         }
+
+        if ($url == 'feed.json') {
+            $this->feedType = "json";
+        }
+
+        if ($url == 'microblog.json') {
+            $this->feedType = "microblog";
+        }
     }
 
 
@@ -75,13 +83,13 @@ final class FeedMaker extends AbstractPicoPlugin
         if ($this->feedType != null) {
             //Sitemap found, 200 OK
             header($_SERVER['SERVER_PROTOCOL'] . ' 200 OK');
-            header("Content-Type: application/rss+xml; charset=UTF-8");
+            $content = "";
 
             $twig = $this->getTwig();
             $feedPages = array();
 
             foreach ($pages as $key => $page) {
-                if (array_key_exists("date", $page)) {
+                if (array_key_exists("date", $page) && $page['date'] != "") {
                     $rawMD = $this->getPico()->prepareFileContent($page['raw_content']);
                     $rawContent = $this->getPico()->getParsedown()->parse($rawMD);
                     $page['content'] = $rawContent;
@@ -90,12 +98,30 @@ final class FeedMaker extends AbstractPicoPlugin
             }
 
             if ($this->feedType == "rss") {
+                header("Content-Type: application/rss+xml; charset=UTF-8");
                 $content = $twig->render("/rss.twig", array(
                     "pages" => $feedPages,
                     "baseURL" => $this->baseURL,
                     "siteDescription" => $this->siteDescription,
                     "title" => $this->feedTitle,
                 ));
+            }
+
+            if ($this->feedType == "json") {
+                header("Content-Type: application/json; charset=UTF-8");
+                $content = $this->getJSONFeedContent($feedPages);
+            }
+
+            if ($this->feedType == "microblog") {
+                header("Content-Type: application/json; charset=UTF-8");
+
+                foreach ($feedPages as $key => $page) {
+                    if ($page['meta']['template'] != "microblog") {
+                        unset($feedPages[$key]);
+                    }
+                }
+
+                $content = $this->getJSONFeedContent($feedPages, "microblog.json");
             }
 
             die($content);
@@ -116,5 +142,39 @@ final class FeedMaker extends AbstractPicoPlugin
         }
 
         return $this->twig;
+    }
+
+    /**
+     * Return the json feed for given pages
+     *
+     * @param $pages An array pages
+     * @param $feedName The name of the feed
+     *
+     * @return string
+     */
+    private function getJSONFeedContent($feedPages, $feedName = "feed.json")
+    {
+        $pages = array();
+
+        foreach ($feedPages as $key => $page) {
+            $date = new DateTime($page['date']);
+
+            array_push($pages, array(
+                "id" => $page['url'],
+                "content_html" => $page['content'],
+                "url" => $page['url'],
+                "date_published" => $date->format("Y-m-d\TH:i:s+00:00")
+            ));
+        }
+
+        $content = $this->getTwig()->render("/json.twig", array(
+            "content" => $pages,
+            "baseURL" => $this->baseURL,
+            "siteDescription" => $this->siteDescription,
+            "title" => $this->feedTitle,
+            "feedName" => $feedName,
+        ));
+
+        return $content;
     }
 }
